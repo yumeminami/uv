@@ -13,7 +13,7 @@ Installing and managing Python itself.
 - `uv python list`: View available Python versions.
 - `uv python find`: Find an installed Python version.
 - `uv python pin`: Pin the current project to use a specific Python version.
-- `uv python uninstall`: Uninstall a Python version.
+- `uv python uninstall`: Uninstall Python versions, or prune outdated installations with `--outdated`.
 
 See the [guide on installing Python](../guides/install-python.md) to get started.
 

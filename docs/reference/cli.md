@@ -3838,7 +3838,7 @@ Uninstall Python versions
 <h3 class="cli-reference">Usage</h3>
 
 ```
-uv python uninstall [OPTIONS] <TARGETS>...
+uv python uninstall [OPTIONS] [TARGETS]...
 ```
 
 <h3 class="cli-reference">Arguments</h3>
@@ -3850,6 +3850,7 @@ uv python uninstall [OPTIONS] <TARGETS>...
 <h3 class="cli-reference">Options</h3>
 
 <dl class="cli-reference"><dt id="uv-python-uninstall--all"><a href="#uv-python-uninstall--all"><code>--all</code></a></dt><dd><p>Uninstall all managed Python versions</p>
+</dd><dt id="uv-python-uninstall--outdated"><a href="#uv-python-uninstall--outdated"><code>--outdated</code></a></dt><dd><p>Uninstall outdated managed Python versions</p>
 </dd><dt id="uv-python-uninstall--allow-insecure-host"><a href="#uv-python-uninstall--allow-insecure-host"><code>--allow-insecure-host</code></a>, <code>--trusted-host</code> <i>allow-insecure-host</i></dt><dd><p>Allow insecure connections to a host.</p>
 <p>Can be provided multiple times.</p>
 <p>Expects to receive either a hostname (e.g., <code>localhost</code>), a host-port pair (e.g., <code>localhost:8080</code>), or a URL (e.g., <code>https://localhost</code>).</p>

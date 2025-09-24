@@ -1,7 +1,7 @@
 #[cfg(windows)]
 use std::path::PathBuf;
 
-use std::{env, path::Path, process::Command};
+use std::{env, fs, path::Path, process::Command};
 
 use crate::common::{TestContext, uv_snapshot};
 use assert_cmd::assert::OutputAssertExt;
@@ -119,7 +119,7 @@ fn python_install() {
     error: the following required arguments were not provided:
       <TARGETS>...
 
-    Usage: uv python uninstall --install-dir <INSTALL_DIR> <TARGETS>...
+    Usage: uv python uninstall --install-dir <INSTALL_DIR> --no-progress <TARGETS>...
 
     For more information, try '--help'.
     "###);
@@ -226,6 +226,98 @@ fn python_reinstall_patch() {
     Installed Python 3.12.11 in [TIME]
      + cpython-3.12.11-[PLATFORM] (python3.12)
     ");
+}
+
+#[test]
+fn python_uninstall_outdated() {
+    let context: TestContext = TestContext::new_with_versions(&[])
+        .with_filtered_python_keys()
+        .with_filtered_exe_suffix()
+        .with_managed_python_dirs()
+        .with_python_download_cache();
+
+    uv_snapshot!(
+        context.filters(),
+        context
+            .python_install()
+            .arg("3.12.5")
+            .arg("3.12.6")
+            .arg("3.12.7"),
+        @r"
+    success: true
+    exit_code: 0
+    ----- stdout -----
+
+    ----- stderr -----
+    Installed 3 versions in [TIME]
+     + cpython-3.12.5-[PLATFORM]
+     + cpython-3.12.6-[PLATFORM]
+     + cpython-3.12.7-[PLATFORM] (python3.12)
+    "
+    );
+
+    uv_snapshot!(
+        context.filters(),
+        context.python_uninstall().arg("--outdated"),
+        @r"
+    success: true
+    exit_code: 0
+    ----- stdout -----
+
+    ----- stderr -----
+    Searching for Python installations
+    Uninstalled 2 versions in [TIME]
+     - cpython-3.12.5-[PLATFORM]
+     - cpython-3.12.6-[PLATFORM]
+    "
+    );
+
+    let managed_dir = context.temp_dir.child("managed");
+    let installs: Vec<String> = fs::read_dir(managed_dir.path())
+        .unwrap()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            entry
+                .file_type()
+                .ok()
+                .filter(|file_type| file_type.is_dir())
+                .and_then(|_| entry.file_name().into_string().ok())
+        })
+        .filter(|name| name.starts_with("cpython-"))
+        .collect();
+
+    assert!(
+        installs
+            .iter()
+            .any(|name| name.starts_with("cpython-3.12.7-")),
+        "expected Python 3.12.7 to remain installed, found {installs:?}"
+    );
+    assert!(
+        !installs
+            .iter()
+            .any(|name| name.starts_with("cpython-3.12.5-")),
+        "expected outdated Python versions to be removed, found {installs:?}"
+    );
+    assert!(
+        !installs
+            .iter()
+            .any(|name| name.starts_with("cpython-3.12.6-")),
+        "expected outdated Python versions to be removed, found {installs:?}"
+    );
+
+    uv_snapshot!(
+        context.filters(),
+        context.python_uninstall().arg("--outdated"),
+        @r"
+    success: true
+    exit_code: 0
+    ----- stdout -----
+
+    ----- stderr -----
+    Searching for Python installations
+    No outdated Python versions found
+    "
+    );
 }
 
 #[test]
@@ -750,7 +842,7 @@ fn python_install_preview() {
     error: the following required arguments were not provided:
       <TARGETS>...
 
-    Usage: uv python uninstall --install-dir <INSTALL_DIR> <TARGETS>...
+    Usage: uv python uninstall --install-dir <INSTALL_DIR> --no-progress <TARGETS>...
 
     For more information, try '--help'.
     "###);
@@ -2263,7 +2355,7 @@ fn python_install_default_from_env() {
     error: the following required arguments were not provided:
       <TARGETS>...
 
-    Usage: uv python uninstall --install-dir <INSTALL_DIR> <TARGETS>...
+    Usage: uv python uninstall --install-dir <INSTALL_DIR> --no-progress <TARGETS>...
 
     For more information, try '--help'.
     "###);
@@ -2291,7 +2383,7 @@ fn python_install_default_from_env() {
     error: the following required arguments were not provided:
       <TARGETS>...
 
-    Usage: uv python uninstall --install-dir <INSTALL_DIR> <TARGETS>...
+    Usage: uv python uninstall --install-dir <INSTALL_DIR> --no-progress <TARGETS>...
 
     For more information, try '--help'.
     "###);
@@ -2305,7 +2397,7 @@ fn python_install_default_from_env() {
     ----- stderr -----
     error: the argument '--all' cannot be used with '<TARGETS>...'
 
-    Usage: uv python uninstall --all --install-dir <INSTALL_DIR> <TARGETS>...
+    Usage: uv python uninstall --all --install-dir <INSTALL_DIR> --no-progress <TARGETS>...
 
     For more information, try '--help'.
     "###);
@@ -2624,7 +2716,7 @@ fn python_install_no_cache() {
     error: the following required arguments were not provided:
       <TARGETS>...
 
-    Usage: uv python uninstall --install-dir <INSTALL_DIR> <TARGETS>...
+    Usage: uv python uninstall --install-dir <INSTALL_DIR> --no-progress <TARGETS>...
 
     For more information, try '--help'.
     "###);
