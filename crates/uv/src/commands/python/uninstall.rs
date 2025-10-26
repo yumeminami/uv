@@ -29,6 +29,7 @@ pub(crate) async fn uninstall(
     install_dir: Option<PathBuf>,
     targets: Vec<String>,
     all: bool,
+    outdated: bool,
     printer: Printer,
     preview: Preview,
 ) -> Result<ExitStatus> {
@@ -37,7 +38,7 @@ pub(crate) async fn uninstall(
     let _lock = installations.lock().await?;
 
     // Perform the uninstallation.
-    do_uninstall(&installations, targets, all, printer, preview).await?;
+    do_uninstall(&installations, targets, all, outdated, printer, preview).await?;
 
     // Clean up any empty directories.
     if uv_fs::directories(installations.root())?.all(|path| uv_fs::is_temporary(&path)) {
@@ -65,79 +66,110 @@ async fn do_uninstall(
     installations: &ManagedPythonInstallations,
     targets: Vec<String>,
     all: bool,
+    outdated: bool,
     printer: Printer,
     preview: Preview,
 ) -> Result<ExitStatus> {
     let start = std::time::Instant::now();
 
-    let requests = if all {
-        vec![PythonRequest::Default]
-    } else {
-        let targets = targets.into_iter().collect::<BTreeSet<_>>();
-        targets
-            .iter()
-            .map(|target| PythonRequest::parse(target.as_str()))
-            .collect::<Vec<_>>()
-    };
-
-    let download_requests = requests
-        .iter()
-        .map(|request| {
-            PythonDownloadRequest::from_request(request).ok_or_else(|| {
-                anyhow::anyhow!("Cannot uninstall managed Python for request: {request}")
-            })
-        })
-        // Always include pre-releases in uninstalls
-        .map(|result| result.map(|request| request.with_prereleases(true)))
-        .collect::<Result<Vec<_>>>()?;
     let installed_installations: Vec<_> = installations.find_all()?.collect();
     let mut matching_installations = BTreeSet::default();
-    for (request, download_request) in requests.iter().zip(download_requests) {
-        if matches!(requests.as_slice(), [PythonRequest::Default]) {
-            writeln!(printer.stderr(), "Searching for Python installations")?;
-        } else {
-            writeln!(
-                printer.stderr(),
-                "Searching for Python versions matching: {}",
-                request.cyan()
-            )?;
+
+    if outdated {
+        writeln!(printer.stderr(), "Searching for Python installations")?;
+
+        if installed_installations.is_empty() {
+            writeln!(printer.stderr(), "No Python installations found")?;
+            return Ok(ExitStatus::Failure);
         }
-        let mut found = false;
-        for installation in installed_installations
-            .iter()
-            .filter(|installation| download_request.satisfied_by_key(installation.key()))
-        {
-            found = true;
-            matching_installations.insert(installation.clone());
-        }
-        if !found {
-            // Clear any remnants in the registry
-            #[cfg(windows)]
+
+        let latest_installations =
+            PythonInstallationMinorVersionKey::highest_installations_by_minor_version_key(
+                installed_installations.iter(),
+            );
+
+        for installation in &installed_installations {
+            if latest_installations
+                .get(installation.minor_version_key())
+                .is_some_and(|latest_installation| latest_installation.key() != installation.key())
             {
-                uv_python::windows_registry::remove_orphan_registry_entries(
-                    &installed_installations,
-                );
+                matching_installations.insert(installation.clone());
             }
+        }
 
+        if matching_installations.is_empty() {
+            writeln!(printer.stderr(), "No outdated Python versions found")?;
+            return Ok(ExitStatus::Success);
+        }
+    } else {
+        let requests = if all {
+            vec![PythonRequest::Default]
+        } else {
+            let targets = targets.into_iter().collect::<BTreeSet<_>>();
+            targets
+                .iter()
+                .map(|target| PythonRequest::parse(target.as_str()))
+                .collect::<Vec<_>>()
+        };
+
+        let download_requests = requests
+            .iter()
+            .map(|request| {
+                PythonDownloadRequest::from_request(request).ok_or_else(|| {
+                    anyhow::anyhow!("Cannot uninstall managed Python for request: {request}")
+                })
+            })
+            // Always include pre-releases in uninstalls
+            .map(|result| result.map(|request| request.with_prereleases(true)))
+            .collect::<Result<Vec<_>>>()?;
+
+        for (request, download_request) in requests.iter().zip(download_requests) {
             if matches!(requests.as_slice(), [PythonRequest::Default]) {
-                writeln!(printer.stderr(), "No Python installations found")?;
-                return Ok(ExitStatus::Failure);
+                writeln!(printer.stderr(), "Searching for Python installations")?;
+            } else {
+                writeln!(
+                    printer.stderr(),
+                    "Searching for Python versions matching: {}",
+                    request.cyan()
+                )?;
             }
+            let mut found = false;
+            for installation in installed_installations
+                .iter()
+                .filter(|installation| download_request.satisfied_by_key(installation.key()))
+            {
+                found = true;
+                matching_installations.insert(installation.clone());
+            }
+            if !found {
+                // Clear any remnants in the registry
+                #[cfg(windows)]
+                {
+                    uv_python::windows_registry::remove_orphan_registry_entries(
+                        &installed_installations,
+                    );
+                }
 
+                if matches!(requests.as_slice(), [PythonRequest::Default]) {
+                    writeln!(printer.stderr(), "No Python installations found")?;
+                    return Ok(ExitStatus::Failure);
+                }
+
+                writeln!(
+                    printer.stderr(),
+                    "No existing installations found for: {}",
+                    request.cyan()
+                )?;
+            }
+        }
+
+        if matching_installations.is_empty() {
             writeln!(
                 printer.stderr(),
-                "No existing installations found for: {}",
-                request.cyan()
+                "No Python installations found matching the requests"
             )?;
+            return Ok(ExitStatus::Failure);
         }
-    }
-
-    if matching_installations.is_empty() {
-        writeln!(
-            printer.stderr(),
-            "No Python installations found matching the requests"
-        )?;
-        return Ok(ExitStatus::Failure);
     }
 
     // Remove registry entries first, so we don't have dangling entries between the file removal

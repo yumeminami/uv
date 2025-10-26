@@ -5588,12 +5588,16 @@ pub struct PythonUninstallArgs {
     /// The Python version(s) to uninstall.
     ///
     /// See `uv help python` to view supported request formats.
-    #[arg(required = true)]
+    #[arg(required_unless_present_any = ["all", "outdated"], conflicts_with = "outdated")]
     pub targets: Vec<String>,
 
     /// Uninstall all managed Python versions.
-    #[arg(long, conflicts_with("targets"))]
+    #[arg(long, conflicts_with_all = ["targets", "outdated"])]
     pub all: bool,
+
+    /// Uninstall outdated managed Python versions.
+    #[arg(long, conflicts_with_all = ["targets", "all"])]
+    pub outdated: bool,
 }
 
 #[derive(Args)]
